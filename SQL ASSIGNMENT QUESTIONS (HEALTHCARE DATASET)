@@ -1,0 +1,227 @@
+--1. Retrieve the list of all male patients who were born after 1990, including their patient ID, first name, last name, and date of birth.
+SELECT "PatientID", "FirstName", "LastName", "DateOfBirth"
+FROM patients
+WHERE "Gender" = 'M' AND "DateOfBirth" > '1990-01-01';
+
+--2. Produce a report showing the ten most recent appointments in the system, ordered from the newest to the oldest.
+SELECT * 
+FROM appointments
+ORDER BY "AppointmentDate" DESC
+LIMIT 10;
+
+--3. Generate a report that shows all appointments along with the full names of the patients and doctors involved.
+SELECT a."AppointmentID",
+       p."FirstName" || ' ' || p."LastName" AS PatientName,
+       d."FirstName" || ' ' || d."LastName" AS DoctorName,
+       a."AppointmentDate", a."Status"
+FROM appointments a
+JOIN patients p
+ON a."PatientID" = p."PatientID"
+JOIN doctors d 
+ON a."DoctorID" = d."DoctorID";
+
+--4. Prepare a list that shows all patients together with any treatments they have received, ensuring that patients without treatments also appear in the results.
+SELECT p."PatientID", p."FirstName", p."LastName", t."TreatmentType", t."Outcome"
+FROM patients p
+LEFT JOIN appointments a 
+ON p."PatientID" = a."PatientID"
+LEFT JOIN treatments t 
+ON a."AppointmentID" = t."AppointmentID";
+
+
+--5. Identify any treatments recorded in the system that do not have a matching appointment.
+SELECT t.*
+FROM treatments t
+LEFT JOIN appointments a 
+ON t."AppointmentID" = a."AppointmentID"
+WHERE a."AppointmentID" IS NULL;
+
+--6. Create a summary that shows how many appointments each doctor has handled, ordered from the highest to the lowest count.
+SELECT d."DoctorID", d."FirstName", d."LastName", COUNT(a."AppointmentID") AS AppointmentCount
+FROM doctors d
+LEFT JOIN appointments a
+ON d."DoctorID" = a."DoctorID"
+GROUP BY d."DoctorID", d."FirstName", d."LastName"
+ORDER BY AppointmentCount DESC;
+
+--7. Produce a list of doctors who have handled more than twenty appointments, showing their doctor ID, specialization, and total appointment count.
+SELECT d."DoctorID", d."Specialization", COUNT(a."AppointmentID") AS TotalAppointments
+FROM doctors d
+JOIN appointments a
+ON d."DoctorID" = a."DoctorID"
+GROUP BY d."DoctorID", d."Specialization"
+HAVING COUNT(a."AppointmentID") > 20;
+
+--8. Retrieve the details of all patients who have had appointments with doctors whose specialization is “Cardiology.”
+SELECT DISTINCT p.*
+FROM patients p
+JOIN appointments a 
+ON p."PatientID" = a."PatientID"
+JOIN doctors d
+ON a."DoctorID" = d."DoctorID"
+WHERE d."Specialization" = 'Cardiology';
+
+--9. Produce a list of patients who have at least one bill that remains unpaid.
+SELECT DISTINCT p."PatientID", p."FirstName", p."LastName", b."OutstandingAmount"
+FROM patients p
+JOIN admissions adm 
+ON adm."PatientID" = p."PatientID"
+JOIN bills b 
+ON b."AdmissionID" = adm."AdmissionID"
+WHERE b."OutstandingAmount" > 0;
+
+--10. Retrieve all bills whose total amount is higher than the average total amount for all bills in the system.
+SELECT * 
+FROM bills
+WHERE "TotalAmount" >
+(SELECT AVG("TotalAmount")
+FROM bills);
+
+--11. For each patient in the database, identify their most recent appointment and list it along with the patient’s ID.
+SELECT DISTINCT ON (a."PatientID") a."PatientID", a."AppointmentID", a."AppointmentDate"
+FROM appointments a
+ORDER BY a."PatientID", a."AppointmentDate" DESC;
+
+--12. For every appointment in the system, assign a sequence number that ranks each patient’s appointments from most recent to oldest.
+SELECT a."PatientID", a."AppointmentID", a."AppointmentDate",
+       RANK() OVER (PARTITION BY a."PatientID" ORDER BY a."AppointmentDate" DESC) AS AppointmentRank
+FROM appointments a;
+
+--13. Generate a report showing the number of appointments per day for October 2021, including a running total across the month.
+WITH daily_appointments AS (
+  SELECT "AppointmentDate" AS date, COUNT(*) AS count
+  FROM appointments
+  WHERE "AppointmentDate" BETWEEN '2021-10-01' AND '2021-10-31'
+  GROUP BY date
+)
+SELECT date, count,
+       SUM(count) OVER (ORDER BY date) AS running_total
+FROM daily_appointments
+ORDER BY date;
+
+
+--14. Using a temporary query structure, calculate the average, minimum, and maximum total bill amount, and then return these values in a single result set.
+SELECT AVG("TotalAmount") AS avg_amount,
+       MIN("TotalAmount") AS min_amount,
+       MAX("TotalAmount") AS max_amount
+FROM bills;
+
+--15. Build a query that identifies all patients who currently have an outstanding balance, based on information from admissions and billing records.
+SELECT DISTINCT p."PatientID", p."FirstName", p."LastName"
+FROM patients p
+JOIN admissions adm
+ON p."PatientID" = adm."PatientID"
+JOIN bills b 
+ON b."AdmissionID" = adm."AdmissionID"
+WHERE b."OutstandingAmount" > 0;
+
+
+--16. Create a query that generates all dates from January 1 to January 15, 2021, and show how many appointments occurred on each of those dates.
+WITH date_series AS (
+  SELECT generate_series('2021-01-01'::date, '2021-01-15'::date, '1 day') AS date
+), 
+appointment_counts AS (
+  SELECT "AppointmentDate"::date AS date, COUNT(*) AS count
+  FROM appointments
+  WHERE "AppointmentDate" BETWEEN '2021-01-01' AND '2021-01-15'
+  GROUP BY date
+)
+SELECT d.date, COALESCE(ac.count, 0) AS appointment_count
+FROM date_series d
+LEFT JOIN appointment_counts ac ON d.date = ac.date
+ORDER BY d.date;
+
+
+--17. Add a new patient record to the Patients table, providing appropriate information for all required fields.
+INSERT INTO patients ("PatientID", "FirstName", "LastName", "Gender", "DateOfBirth", "Email", "PhoneNumber")
+VALUES ('P0123', 'John', 'Doe', 'Male', '1985-07-14', 'john.doe@example.com', '55501197');
+
+
+--18. Modify the appointments table so that any appointment with a NULL status is updated to show “Scheduled.”
+UPDATE appointments
+SET "Status" = 'Scheduled'
+WHERE "Status" IS NULL;
+
+--19. Remove all prescription records that belong to appointments marked as “Cancelled.”
+DELETE FROM prescriptions p
+WHERE EXISTS (
+  SELECT 1
+  FROM appointments a
+  WHERE a."AppointmentID" = p."AppointmentID"
+  AND a."Status" = 'Cancelled'
+  );
+
+
+--20. Create a stored procedure that adds a new record to the Doctors table.
+--The procedure should accept the doctor’s ID, first name, last name, specialization, email, and phone number as input parameters.
+CREATE OR REPLACE PROCEDURE healthcare.add_doctor(
+  p_doctor_id VARCHAR,
+  p_first_name VARCHAR,
+  p_last_name VARCHAR,
+  p_specialization VARCHAR,
+  p_email VARCHAR,
+  p_phone VARCHAR
+)
+LANGUAGE plpgsql AS $$
+BEGIN
+  INSERT INTO healthcare.doctors ("DoctorID", "FirstName", "LastName", "Specialization", "Email", "PhoneNumber")
+  VALUES (p_doctor_id, p_first_name, p_last_name, p_specialization, p_email, p_phone);
+END;
+$$;
+--After creating the procedure, call it using a set of sample doctor details to insert a new doctor into the database.
+CALL healthcare.add_doctor('D0100', 'Alice', 'Smith', 'Neurology', 'alice.smith@example.com', '555-1234');
+
+
+--21. Create a stored procedure that records a new appointment and automatically performs validation before inserting.
+--The procedure should accept an appointment ID, patient ID, doctor ID, appointment date, status,  and nurse ID.
+--Inside the procedure, implement the following logic:
+--* Verify that the patient exists in the Patients table.
+--* Verify that the doctor exists in the Doctors table.
+
+--* If either does not exist, prevent the insertion and return an error message.
+--* If both exist, insert the appointment into the Appointments table.
+
+CREATE OR REPLACE PROCEDURE healthcare.add_appointment(
+  p_appointment_id INT,
+  p_patient_id VARCHAR,
+  p_doctor_id VARCHAR,
+  p_appointment_date TIMESTAMP,
+  p_status VARCHAR,
+  p_nurse_id VARCHAR,                   
+  OUT p_success BOOLEAN,
+  OUT p_message TEXT
+)
+LANGUAGE plpgsql AS $$
+DECLARE
+  patient_count INT;
+  doctor_count INT;
+BEGIN
+  IF p_nurse_id IS NULL THEN
+    p_nurse_id := NULL;
+  END IF;
+
+  SELECT COUNT(*) INTO patient_count FROM healthcare.patients WHERE "PatientID" = p_patient_id;
+  SELECT COUNT(*) INTO doctor_count FROM healthcare.doctors WHERE "DoctorID" = p_doctor_id;
+
+  IF patient_count = 0 THEN
+    p_success := FALSE;
+    p_message := 'Patient does not exist';
+    RETURN;
+  ELSIF doctor_count = 0 THEN
+    p_success := FALSE;
+    p_message := 'Doctor does not exist';
+    RETURN;
+  ELSE
+    INSERT INTO healthcare.appointments("AppointmentID", "PatientID", "DoctorID", "AppointmentDate", "Status", "NurseID")
+    VALUES (p_appointment_id, p_patient_id, p_doctor_id, p_appointment_date, p_status, p_nurse_id);
+
+    p_success := TRUE;
+    p_message := 'Appointment added successfully';
+  END IF;
+END;
+$$;
+
+--after creating the procedure, call it with sample data to demonstrate both a successful and a failed insertion attempt.
+CALL healthcare.add_appointment(101, 'P0001', 'D0001', '2025-11-23 10:00:00', 'Scheduled', NULL, p_success, p_message);
+
+CALL hospital.add_appointment(102, 'P99991', 'D0001', '2025-11-23 10:00:00', 'Scheduled', NULL, p_success, p_message);
