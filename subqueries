@@ -1,0 +1,190 @@
+--Subqueries
+--1. What is the most recent appointment date for patient P0082? 
+--using subquery in where:
+select
+max("AppointmentDate") as most_recent_appointment
+from appointments
+where
+"PatientID" = 'P0082';
+ --or
+select * from appointments
+where "PatientID"='P0082'
+order by "AppointmentDate" desc
+limit 1;
+
+--2. List patient names who had an appointment on 2021-10-25. 
+--using a join
+select p."PatientID", p."FirstName", p."LastName"
+from patients p
+join appointments a
+on
+p."PatientID" = a."PatientID"
+where a."AppointmentDate" = '2021-10-25';
+
+--sql
+select p."PatientID", p."FirstName", p."LastName"
+from patients p
+where p."PatientID" in(
+select "PatientID" from healthcare.appointments where "AppointmentDate"  ='2021-10-25'
+);
+
+--3. Show doctors whose number of appointments is above the average per doctor. 
+--sql
+select d."DoctorID", d."FirstName", d."LastName"
+from doctors d
+where(
+select count(*) from appointments a
+where a."DoctorID" = d."DoctorID"
+)>(
+select avg(doctor_count) from (
+select count(*) as doctor_count from appointments 
+group by "DoctorID") sub
+);
+
+--join and group by
+select d."DoctorID", d."FirstName", d."LastName", count(a."AppointmentID") as num_appointments
+from doctors d
+join appointments a
+on d."DoctorID" = a."DoctorID"
+group by d."DoctorID", d."FirstName", d."LastName"
+having count(a."AppointmentID") > (
+select avg(doctor_count) from (
+select count(*) as doctor_count
+from appointments
+group by "DoctorID"
+) as per_doc
+)
+order by num_appointments desc;
+
+--average per doctor
+SELECT 
+    "DoctorID",
+    COUNT(*) AS num_appointments,
+    AVG(COUNT(*)) OVER () AS avg_per_doctor
+FROM 
+    appointments
+GROUP BY 
+    "DoctorID";
+
+--4. Return patients who have any outstanding bill (OutstandingAmount > 0). 
+select p."PatientID", p."FirstName", p."LastName"
+from patients p
+where p."PatientID" IN(
+select adm."PatientID" from admissions adm
+join bills b
+on adm."AdmissionID" = b."AdmissionID"
+where b."OutstandingAmount" > 0
+);
+
+--5. List patients with no appointments at all. 
+select p."PatientID", p."FirstName", p."LastName"
+from patients p
+where not exists(
+select 1
+from appointments a
+where a."PatientID" = p."PatientID"
+);
+
+--6. For each appointment, show how many prescriptions it has. 
+select a."AppointmentID", count(pres."PrescriptionID") as prescription_count
+from appointments a
+left join prescriptions pres 
+on a."AppointmentID" = pres."AppointmentID"
+group by a."AppointmentID";
+
+--7. List appointments that have more than 3 prescriptions. 
+select a."AppointmentID"
+from appointments a
+left join prescriptions p
+on a."AppointmentID" = p."AppointmentID"
+group by a."AppointmentID"
+having count(p."PrescriptionID") > 3;
+
+--8. Show the top 3 doctor specializations by appointment count. 
+SELECT 
+    d."Specialization",
+    COUNT(a."AppointmentID") AS appointment_count
+FROM doctors d
+JOIN appointments a 
+    ON d."DoctorID" = a."DoctorID"
+GROUP BY d."Specialization"
+ORDER BY appointment_count DESC
+LIMIT 3;
+
+--using rank
+SELECT "Specialization", appointment_count
+FROM (
+  SELECT d."Specialization", 
+         COUNT(a."AppointmentID") AS appointment_count,
+         DENSE_RANK() OVER (ORDER BY COUNT(a."AppointmentID") DESC) AS rank
+  FROM doctors d
+  JOIN appointments a 
+  ON d."DoctorID" = a."DoctorID"
+  GROUP BY d."Specialization"
+) ranked
+WHERE rank <= 3;
+
+--9. Return bills where the admission’s total amount is above that patient’s average bill. 
+select b."BillID", b."TotalAmount", p."PatientID"
+from bills b
+join admissions adm
+on b."AdmissionID" = adm."AdmissionID"
+join patients p
+on adm."PatientID" = p."PatientID"
+where b."TotalAmount" > (
+select avg(b2."TotalAmount")
+from bills b2
+join admissions adm2
+on b2."AdmissionID" = adm2."AdmissionID"
+);
+
+
+--10. Write an UPDATE that marks appointments as Cancelled for patients who have any unpaid balance. 
+update appointments
+set "Status" = 'Cancelled'
+where "PatientID" in (
+select adm."PatientID" 
+from admissions adm
+join bills b 
+on adm."AdmissionID" = b."AdmissionID"
+where b."OutstandingAmount" > 0
+);
+
+select * from appointments;
+
+-- List patient names who had an appointment on 2021-10-25
+select
+p."PatientID",
+p."FirstName",
+p."LastName"
+from patients p
+join appointments a
+on p."PatientID" = a."PatientID"
+where
+a."AppointmentDate" = '2021-10-25';
+
+--Show doctors whose number of appointments is above the average per doctor. 
+select 
+d."DoctorID",
+d."FirstName",
+d."LastName",
+count(a."AppointmentID") as total_appointments
+from doctors d
+join appointments a
+on
+d."DoctorID" = a."DoctorID"
+group by
+d."DoctorID",
+d."FirstName",
+d."LastName"
+having
+count(a."AppointmentID") > (
+select avg(appointments_per_doctor)
+from (
+select count(*) as appointments_per_doctor
+from appointments
+group by "DoctorID"
+)sub
+)
+order by
+total_appointments desc;
